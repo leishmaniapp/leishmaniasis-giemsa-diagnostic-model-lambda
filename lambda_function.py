@@ -38,7 +38,7 @@ def handler(event, context):
 		key = requestJson['reference']['key']
 	
 		filePath = f'/tmp/{key}'	
-		if  not os.path.exists(filePath):
+		if not os.path.exists(os.path.dirname(filePath)):
 			os.makedirs(os.path.dirname(filePath))
    
 		logger.info(f"Requesting from S3: {key}")
@@ -64,13 +64,15 @@ def handler(event, context):
 			signal.alarm(0)
 
 			execution_result = {
-				"leishmaniasis.giemsa:macrophages": modelResult
+				"leishmaniasis.giemsa:macrophages": modelResult,
+				"leishmaniasis.giemsa:parasites": [],
 			}
    
 		except:
 			logger.error(f"ProcessingError: Model execution failed or timedout")
 			execution_result = {
-				"leishmaniasis.giemsa:macrophages": []
+				"leishmaniasis.giemsa:macrophages": [],
+				"leishmaniasis.giemsa:parasites": [],
 			}
 	
 		# 4. Store results in DynamoDB
