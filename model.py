@@ -2,6 +2,9 @@ import cv2
 import cvzone
 import numpy as np
 from cvzone.ColorModule import ColorFinder
+import logging
+
+logger = logging.getLogger()
 
 #Calculate the distance between two given points
 def distanceCalculate(p1, p2):
@@ -19,8 +22,13 @@ def polygonCenter (contour):
 
 #Pre Process Method
 def coreIdentification(img):
+    
+    myColorFinder = ColorFinder(False)
+    # Custom Color
+    hsvVals = {'hmin': 70, 'smin': 180, 'vmin': 104, 'hmax': 255, 'smax': 255, 'vmax': 255}
+    #Color Detection
+    imgColor, mask = myColorFinder.update(img,hsvVals)
 
-    mask = dynamicThresholding(img)
     #Pre Process
     contours, hierarchy = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
     cv2.drawContours(mask,contours, -1, color=(255,255,255),thickness=cv2.FILLED)
@@ -35,41 +43,37 @@ def coreIdentification(img):
     mask2 = np.zeros((1944,1944 , 1), dtype = np.uint8)
     cores = cv2.HoughCircles(mask, cv2.HOUGH_GRADIENT, 1, 160, param1=50, param2=6, minRadius=110, maxRadius=120)
     circlesTest = img.copy()
-    cores = np.uint16(np.around(cores))
-    for (x,y,r ) in cores[0,:]:
-        cv2.circle(circlesTest, (x,y), r,(0,0,255),3)
-        cv2.circle(circlesTest, (x,y), 2,(0,0,255),3)
-
+    if cores is not None:
+        cores = np.uint16(np.around(cores))
+        for (x,y,r ) in cores[0,:]:
+            cv2.circle(circlesTest, (x,y), r,(0,0,255),3)
+            cv2.circle(circlesTest, (x,y), 2,(0,0,255),3)
+            
     #Getting rid of the not rounded contours
     contours, hierarchy1 = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
-    for (x,y,r ) in cores[0,:]:
-        for i in range(len(contours)):
-            cnt = contours[i]
-            if 1 ==  cv2.pointPolygonTest(cnt,(x,y),False):
-                cv2.drawContours(mask2,contours,i,color=(255,255,255),thickness=cv2.FILLED)
+    if cores is not None:
+        for (x,y,r ) in cores[0,:]:
+            for i in range(len(contours)):
+                cnt = contours[i]
+                if 1 ==  cv2.pointPolygonTest(cnt,(x,y),False):
+                    cv2.drawContours(mask2,contours,i,color=(255,255,255),thickness=cv2.FILLED)
     
     #Update found cores contours
     contours, hierarchy1 = cv2.findContours(mask2, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
 
-    return mask2, contours
+    return mask2, imgColor, contours
 
 #Cytoplasm Identification
-def cytoplasmIdentification (img, coreMask, cores):
-
-    #CoreColors
-    myColorFinder = ColorFinder(False)
-    # Custom Color
-    hsvVals = {'hmin': 70, 'smin': 180, 'vmin': 104, 'hmax': 255, 'smax': 255, 'vmax': 255}
-    #Color Detection
-    coreImgColor, mask = myColorFinder.update(img,hsvVals)
-
+def cytoplasmIdentification (img, coreMask, coreImgColor, cores):
     myColorFinder = ColorFinder(False)
     # Custom Color
     #hsv(285, 20%, 86%)
     hsvVals = {'hmin': 14, 'smin': 29, 'vmin': 60, 'hmax': 360, 'smax': 360, 'vmax': 360}
     #Color Detection
     imgColor, mask = myColorFinder.update(img,hsvVals)
+
     diff = cv2.subtract(imgColor, coreImgColor)
+
 
     contours, hierarchy = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
     cv2.drawContours(mask,contours, -1, color=(255,255,255),thickness=cv2.FILLED)
@@ -116,9 +120,9 @@ def cytoplasmIdentification (img, coreMask, cores):
     return mask2
 
 #Dynamic thresholding
-def dynamicThresholding (img):
+def dynamicThresholding ():
     #Reding input image
-    img = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
+    img = cv2.imread('L19_M1_C2.png', cv2.IMREAD_GRAYSCALE)
     #Apply threshold
     ret1,th1 = cv2.threshold(img,0,255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)
     #Invert mask
@@ -148,10 +152,12 @@ def dynamicThresholding (img):
                 cv2.drawContours(mask,contours,i,color=(255,255,255),thickness=cv2.FILLED)
     #Update Contours
     contours, hierarchy = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
-    return mask
+
+    th2 = cv2.adaptiveThreshold(img,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C,cv2.THRESH_BINARY,11,2)
+
 
 #Processing Images Method 1
-def processImage(imgPre, img) -> list[dict] :
+def processImage(imgPre, img):
     
     results = []
     
@@ -170,17 +176,19 @@ def processImage(imgPre, img) -> list[dict] :
             results.append({"x": center[0], "y": center[1]})
             
     return results
-    
 
 def call_model_execution(filepath: str) -> list[dict]:
     
-	img = cv2.imread(filepath,1)
+	img = cv2.imread(filepath, 1)
+	logger.info("imread finished")
 
 	#Preprocess Image - Core Identification (Part 1)
-	coreMask, cores = coreIdentification(img)
+	coreMask, coreImgColor , cores = coreIdentification(img)
+	logger.info("CoreIdentification finished")
 
 	#Preprocess Image - Cytoplasm Identification (Part2)
-	mask = cytoplasmIdentification(img, coreMask, cores)
+	mask = cytoplasmIdentification(img, coreMask, coreImgColor, cores)
+	logger.info("cytoplasmIdentification finished")
 
 	#Process Image
 	return processImage(mask,img)

@@ -3,11 +3,16 @@ import os
 import json
 import boto3
 import logging
+import signal
 
 from model import call_model_execution
 
 AWS_REGION = "us-east-1"
 DYNAMO_TABLE_NAME = "metadata-repository"
+
+def model_execution_timeout(signum, frame):
+    print("Timeout on SIGALARM")
+    raise Exception("Timeout exception, model is taking too much to process")
 
 def handler(event, context):
     
@@ -36,7 +41,6 @@ def handler(event, context):
 		if  not os.path.exists(filePath):
 			os.makedirs(os.path.dirname(filePath))
    
-
 		logger.info(f"Requesting from S3: {key}")
   
 		try:
@@ -45,7 +49,7 @@ def handler(event, context):
    
 		except:
 			logger.error("Failed to obtain image from Bucket")
-			return "S3 Error"
+			return "S3Error: Cannot fetch image from bucket"
 
 		execution_result = {}
 	
@@ -53,14 +57,21 @@ def handler(event, context):
  
 		try:
 			# 3. Call model with image path
+			signal.signal(signal.SIGALRM, handler)
+			signal.alarm(30) # 30 seconds timeout
+   
 			modelResult = call_model_execution(filePath)
+			signal.alarm(0)
 
 			execution_result = {
 				"leishmaniasis.giemsa:macrophages": modelResult
 			}
+   
 		except:
-			logger.error("Failed to process image")
-			return "Model Error"
+			logger.error(f"ProcessingError: Model execution failed or timedout")
+			execution_result = {
+				"leishmaniasis.giemsa:macrophages": []
+			}
 	
 		# 4. Store results in DynamoDB
 		itemId = {
@@ -85,6 +96,6 @@ def handler(event, context):
 			results.append(tableUpdateResult)
 		except:
 			logger.error("Failed to update image metadata")
-			return "DynamoDB Error"
+			return "DynamoDBError: Failed to upload or update metadata"
   
 	return results

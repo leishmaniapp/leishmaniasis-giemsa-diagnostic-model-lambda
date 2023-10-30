@@ -43,8 +43,10 @@
 
 ## Expected result
 ```json
-[
-	{"x": 638, "y": 1218},
-	{"x": 394, "y": 1109}
-]
+{
+	"leishmaniasis.giemsa:macrophages": [
+		{"x": 638, "y": 1218},
+		{"x": 394, "y": 1109}
+	]
+}
 ```
